@@ -1,0 +1,19 @@
+{
+  "name": "MD 에디터",
+  "short_name": "MD 에디터",
+  "description": "마크다운 편집, 실시간 미리보기, HTML/PDF 내보내기를 지원하는 모바일 에디터",
+  "lang": "ko",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f4f6",
+  "theme_color": "#1f2937",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

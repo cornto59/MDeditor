@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="마크다운 편집, 실시간 미리보기, HTML/PDF 내보내기">
+<meta name="theme-color" content="#1f2937">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MD 에디터">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>MD 에디터</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    font-family: "Malgun Gothic", "맑은 고딕", "Noto Sans KR", system-ui, sans-serif;
+    color: #1f2937; background: #f3f4f6;
+    overscroll-behavior: none;
+  }
+  body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+  /* ---------- 상단 메뉴바 ---------- */
+  .menubar {
+    display: flex; align-items: center; gap: 2px;
+    padding: env(safe-area-inset-top) 6px 0 6px;
+    min-height: 44px; background: #1f2937; color: #fff;
+    position: relative; z-index: 10;
+  }
+  .menubar-inner { display: flex; align-items: center; gap: 2px; width: 100%; height: 44px; }
+  .brand { font-weight: 700; margin: 0 8px 0 4px; font-size: 15px; white-space: nowrap; }
+  .menu { position: relative; }
+  .menu > button {
+    background: none; border: 0; color: #fff; padding: 0 12px; height: 40px;
+    cursor: pointer; font-size: 14px; border-radius: 6px; touch-action: manipulation;
+  }
+  .menu > button:hover, .menu.open > button, .menu > button:active { background: #374151; }
+  .dropdown {
+    display: none; position: absolute; top: 100%; left: 0; min-width: 240px;
+    background: #fff; color: #1f2937; border: 1px solid #d1d5db; border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px 0; z-index: 20;
+  }
+  .menu.open .dropdown { display: block; }
+  .dropdown button {
+    display: flex; justify-content: space-between; align-items: center; width: 100%;
+    background: none; border: 0; padding: 10px 14px; font-size: 14px;
+    cursor: pointer; text-align: left; touch-action: manipulation;
+  }
+  .dropdown button:active, .dropdown button:hover { background: #e5e7eb; }
+  .dropdown button kbd { color: #6b7280; font-family: inherit; font-size: 12px; }
+  .dropdown hr { border: 0; border-top: 1px solid #e5e7eb; margin: 4px 0; }
+  .spacer { flex: 1; }
+  .status { font-size: 12px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+  .hidden-el { display: none !important; }
+
+  /* ---------- 툴바 ---------- */
+  .toolbar {
+    display: flex; gap: 4px; padding: 6px 8px; background: #fff;
+    border-bottom: 1px solid #e5e7eb; overflow-x: auto; flex-shrink: 0;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  }
+  .toolbar::-webkit-scrollbar { display: none; }
+  .toolbar button {
+    flex-shrink: 0; border: 1px solid #d1d5db; background: #fff; border-radius: 6px;
+    padding: 5px 10px; font-size: 14px; cursor: pointer; touch-action: manipulation;
+  }
+  .toolbar button:active { background: #e5e7eb; }
+  .toolbar .sep { flex-shrink: 0; width: 1px; background: #e5e7eb; margin: 0 4px; }
+
+  /* ---------- 모바일 전환 탭 (태블릿/PC에서는 숨김) ---------- */
+  .mode-switch { display: none; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 6px 8px; gap: 6px; flex-shrink: 0; }
+  .mode-switch button {
+    flex: 1; height: 40px; border: 1px solid #d1d5db; background: #fff; border-radius: 8px;
+    font-size: 15px; font-weight: 600; color: #374151; touch-action: manipulation;
+  }
+  .mode-switch button.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+
+  /* ---------- 분할 화면 ---------- */
+  .panes { flex: 1; display: flex; min-height: 0; }
+  .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .pane-title {
+    font-size: 12px; font-weight: 600; color: #6b7280; padding: 6px 14px;
+    background: #f9fafb; border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+  }
+  #source {
+    flex: 1; border: 0; outline: none; resize: none; padding: 14px;
+    font-family: Consolas, "D2Coding", "Roboto Mono", "Courier New", monospace;
+    font-size: 16px; /* 16px 미만이면 일부 브라우저에서 입력 시 자동 확대 발생 */
+    line-height: 1.6; background: #fff; color: #111827; tab-size: 4;
+    -webkit-user-select: text; user-select: text;
+  }
+  .divider { width: 6px; background: #e5e7eb; cursor: col-resize; touch-action: none; flex-shrink: 0; }
+  #preview {
+    flex: 1; overflow: auto; padding: 20px 24px; background: #fff; line-height: 1.7;
+    overflow-wrap: anywhere; -webkit-overflow-scrolling: touch;
+  }
+  #preview h1, #preview h2 { border-bottom: 1px solid #e5e7eb; padding-bottom: .3em; }
+  #preview code { background: #f3f4f6; padding: 2px 5px; border-radius: 3px; font-family: Consolas, monospace; font-size: 90%; }
+  #preview pre { background: #111827; color: #e5e7eb; padding: 12px; border-radius: 6px; overflow-x: auto; }
+  #preview pre code { background: none; padding: 0; color: inherit; }
+  #preview blockquote { border-left: 4px solid #d1d5db; margin: 0; padding: 0 14px; color: #4b5563; }
+  #preview table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+  #preview th, #preview td { border: 1px solid #d1d5db; padding: 6px 10px; }
+  #preview th { background: #f9fafb; }
+  #preview img { max-width: 100%; height: auto; }
+
+  /* ---------- 도움말 모달 ---------- */
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; align-items: center; justify-content: center; padding: 12px; }
+  .modal-backdrop.show { display: flex; }
+  .modal { background: #fff; border-radius: 10px; width: min(560px, 100%); max-height: 84vh; display: flex; flex-direction: column; box-shadow: 0 16px 40px rgba(0,0,0,.3); }
+  .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; font-weight: 700; }
+  .modal-head button { background: none; border: 0; font-size: 24px; line-height: 1; cursor: pointer; color: #6b7280; width: 40px; height: 40px; }
+  .modal-body { padding: 12px 16px 18px; font-size: 14px; line-height: 1.7; overflow: auto; }
+  .modal-body h3 { font-size: 14px; margin: 14px 0 6px; color: #111827; }
+  .modal-body h3:first-child { margin-top: 0; }
+  .modal-body ul { margin: 0; padding-left: 18px; }
+  .modal-body table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .modal-body td { border-bottom: 1px solid #f3f4f6; padding: 6px 4px; }
+  .modal-body td:first-child { width: 110px; white-space: nowrap; }
+  .modal-body kbd { background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 3px; padding: 1px 5px; font-family: Consolas, monospace; font-size: 12px; }
+
+  /* ---------- 토스트 ---------- */
+  .toast {
+    position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: rgba(17,24,39,.92); color: #fff; padding: 10px 16px; border-radius: 8px;
+    font-size: 14px; max-width: 90vw; z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+
+  input[type=file] { display: none; }
+
+  /* ---------- 터치 기기 (안드로이드 휴대폰/태블릿) ---------- */
+  @media (pointer: coarse) {
+    .toolbar button { min-height: 44px; min-width: 44px; font-size: 15px; }
+    .dropdown button { min-height: 46px; font-size: 15px; }
+    .divider { width: 10px; }
+  }
+
+  /* ---------- 휴대폰 세로 (폭 < 720px): 편집/미리보기 한 번에 하나 ---------- */
+  @media (max-width: 719px) {
+    .mode-switch { display: flex; }
+    .status { display: none; }
+    .brand { font-size: 14px; }
+    .menu > button { padding: 0 9px; }
+    .dropdown {
+      position: fixed; top: calc(44px + env(safe-area-inset-top)); left: 8px; right: 8px;
+      min-width: 0; max-height: 70vh; overflow: auto; border-radius: 10px;
+    }
+    .divider { display: none; }
+    body.mode-edit #previewPane { display: none; }
+    body.mode-preview #sourcePane { display: none; }
+    #source { padding: 12px; }
+    #preview { padding: 16px 16px 40px; }
+  }
+
+  /* ---------- 가로 모드 휴대폰/태블릿: 좌우 분할 유지, 패널 좁아지지 않도록 ---------- */
+  @media (min-width: 720px) and (max-width: 1100px) {
+    .status { display: none; }
+  }
+</style>
+</head>
+<body class="mode-edit">
+
+<header class="menubar" id="menubar">
+  <div class="menubar-inner">
+    <span class="brand">MD 에디터</span>
+
+    <div class="menu">
+      <button data-menu>파일</button>
+      <div class="dropdown">
+        <button data-act="new">새로 만들기 <kbd>Ctrl+N</kbd></button>
+        <button data-act="open">열기... <kbd>Ctrl+O</kbd></button>
+        <button data-act="save">저장 (.md) <kbd>Ctrl+S</kbd></button>
+        <button data-act="share">공유...</button>
+        <hr>
+        <button data-act="exportHtml">HTML로 내보내기</button>
+        <button data-act="exportPdf">PDF로 내보내기</button>
+        <hr>
+        <button data-act="install" id="installBtn" class="hidden-el">홈 화면에 앱 설치</button>
+      </div>
+    </div>
+
+    <div class="menu">
+      <button data-menu>편집</button>
+      <div class="dropdown">
+        <button data-act="bold">굵게 <kbd>Ctrl+B</kbd></button>
+        <button data-act="italic">기울임 <kbd>Ctrl+I</kbd></button>
+        <button data-act="h1">제목 1</button>
+        <button data-act="h2">제목 2</button>
+        <button data-act="link">링크 <kbd>Ctrl+K</kbd></button>
+        <button data-act="code">코드 블록</button>
+        <button data-act="table">표 삽입</button>
+        <hr>
+        <button data-act="clear">내용 지우기</button>
+      </div>
+    </div>
+
+    <div class="menu">
+      <button data-menu>보기</button>
+      <div class="dropdown">
+        <button data-act="toggleSource">소스 패널 표시/숨김</button>
+        <button data-act="togglePreview">미리보기 표시/숨김</button>
+        <button data-act="toggleSync">스크롤 동기화</button>
+      </div>
+    </div>
+
+    <div class="menu">
+      <button data-menu>도움말</button>
+      <div class="dropdown">
+        <button data-act="help">사용 방법 <kbd>F1</kbd></button>
+        <button data-act="shortcuts">단축키 목록</button>
+        <hr>
+        <button data-act="about">MD 에디터 정보</button>
+      </div>
+    </div>
+
+    <span class="spacer"></span>
+    <span class="status" id="status">준비됨</span>
+  </div>
+</header>
+
+<div class="toolbar" id="toolbar">
+  <button data-act="h1" title="제목 1">H1</button>
+  <button data-act="h2" title="제목 2">H2</button>
+  <button data-act="bold" title="굵게"><b>B</b></button>
+  <button data-act="italic" title="기울임"><i>I</i></button>
+  <button data-act="strike" title="취소선"><s>S</s></button>
+  <span class="sep"></span>
+  <button data-act="ul" title="목록">• 목록</button>
+  <button data-act="ol" title="번호 목록">1. 목록</button>
+  <button data-act="task" title="체크박스">☑ 체크</button>
+  <button data-act="quote" title="인용">❝ 인용</button>
+  <button data-act="code" title="코드 블록">&lt;/&gt;</button>
+  <button data-act="link" title="링크">링크</button>
+  <button data-act="table" title="표">표</button>
+  <button data-act="hr" title="구분선">―</button>
+</div>
+
+<nav class="mode-switch" id="modeSwitch" aria-label="화면 전환">
+  <button type="button" data-mode="edit" class="active">편집</button>
+  <button type="button" data-mode="preview">미리보기</button>
+</nav>
+
+<main class="panes" id="panes">
+  <section class="pane" id="sourcePane">
+    <div class="pane-title">소스 (Markdown)</div>
+    <textarea id="source" spellcheck="false" autocapitalize="off" autocorrect="off"
+      placeholder="마크다운을 입력하세요. 파일을 이 영역으로 끌어다 놓아도 열립니다."></textarea>
+  </section>
+  <div class="divider" id="divider"></div>
+  <section class="pane" id="previewPane">
+    <div class="pane-title">미리보기</div>
+    <div id="preview"></div>
+  </section>
+</main>
+
+<div class="modal-backdrop" id="helpModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="modal-head"><span id="helpTitle">도움말</span><button id="helpClose" aria-label="닫기">&times;</button></div>
+    <div class="modal-body" id="helpBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<input type="file" id="fileInput" accept=".md,.markdown,.txt,text/markdown,text/plain">
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const source = $('#source'), preview = $('#preview'), statusEl = $('#status');
+  const STORAGE_KEY = 'md-editor-content';
+  const mobileQuery = window.matchMedia('(max-width: 719px)');
+  let fileName = 'untitled.md';
+  let dirty = false;
+  let syncScroll = true;
+  let deferredInstallPrompt = null;
+
+  // ---------- 토스트 ----------
+  let toastTimer = null;
+  function toast(msg, ms = 2200) {
+    const t = $('#toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+
+  // ---------- 렌더링 ----------
+  const hasMarked = typeof marked !== 'undefined';
+  function render(md) {
+    let html;
+    if (hasMarked) {
+      marked.setOptions({ gfm: true, breaks: true });
+      html = marked.parse(md);
+    } else {
+      html = '<pre>' + md.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])) + '</pre>';
+    }
+    return (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(html) : html;
+  }
+  function update() {
+    preview.innerHTML = render(source.value);
+    const words = source.value.trim() ? source.value.trim().split(/\s+/).length : 0;
+    statusEl.textContent = `${fileName}${dirty ? ' •' : ''} | 글자 ${source.value.length} | 단어 ${words}`;
+  }
+  let timer = null;
+  source.addEventListener('input', () => {
+    dirty = true;
+    clearTimeout(timer);
+    timer = setTimeout(() => { update(); localStorage.setItem(STORAGE_KEY, source.value); }, 120);
+  });
+
+  // ---------- 스크롤 동기화 (데스크톱/태블릿 분할 화면에서만 의미 있음) ----------
+  source.addEventListener('scroll', () => {
+    if (!syncScroll || mobileQuery.matches) return;
+    const r = source.scrollTop / Math.max(1, source.scrollHeight - source.clientHeight);
+    preview.scrollTop = r * (preview.scrollHeight - preview.clientHeight);
+  });
+
+  // ---------- 모바일 화면 전환 ----------
+  function setMode(mode) {
+    document.body.classList.toggle('mode-edit', mode === 'edit');
+    document.body.classList.toggle('mode-preview', mode === 'preview');
+    document.querySelectorAll('#modeSwitch button').forEach(b =>
+      b.classList.toggle('active', b.dataset.mode === mode));
+    if (mode === 'preview') { update(); preview.scrollTop = 0; }
+  }
+  document.querySelectorAll('#modeSwitch button').forEach(b =>
+    b.addEventListener('click', () => setMode(b.dataset.mode)));
+  mobileQuery.addEventListener('change', () => {
+    // 태블릿/PC 전환 시 분할 화면이 보이도록 초기화
+    document.body.classList.remove('mode-edit', 'mode-preview');
+    if (mobileQuery.matches) setMode('edit');
+  });
+  if (mobileQuery.matches) setMode('edit');
+
+  // ---------- 편집 헬퍼 ----------
+  function replaceRange(s, e, text) {
+    source.focus();
+    source.setSelectionRange(s, e);
+    if (!document.execCommand || !document.execCommand('insertText', false, text)) {
+      source.value = source.value.slice(0, s) + text + source.value.slice(e);
+    }
+    source.setSelectionRange(s, s + text.length);
+    source.dispatchEvent(new Event('input'));
+  }
+  function insert(text) {
+    replaceRange(source.selectionStart, source.selectionEnd, text);
+  }
+  function wrap(before, after = before, placeholder = '텍스트') {
+    const s = source.selectionStart, e = source.selectionEnd;
+    const sel = source.value.slice(s, e) || placeholder;
+    replaceRange(s, e, before + sel + after);
+    source.setSelectionRange(s + before.length, s + before.length + sel.length);
+  }
+  function linePrefix(prefix) {
+    const s = source.selectionStart, e = source.selectionEnd;
+    const start = source.value.lastIndexOf('\n', s - 1) + 1;
+    const end = e || s;
+    const block = source.value.slice(start, end);
+    const out = block.split('\n').map((l, i) => (typeof prefix === 'function' ? prefix(i) : prefix) + l).join('\n');
+    replaceRange(start, end, out);
+  }
+
+  const actions = {
+    bold: () => wrap('**'),
+    italic: () => wrap('*'),
+    strike: () => wrap('~~'),
+    h1: () => linePrefix('# '),
+    h2: () => linePrefix('## '),
+    ul: () => linePrefix('- '),
+    ol: () => linePrefix(i => `${i + 1}. `),
+    task: () => linePrefix('- [ ] '),
+    quote: () => linePrefix('> '),
+    code: () => insert('\n```\n코드\n```\n'),
+    link: () => wrap('[', '](https://)', '링크 텍스트'),
+    hr: () => insert('\n\n---\n\n'),
+    table: () => insert('\n| 항목 | 설명 |\n| --- | --- |\n| 예시 1 | 내용 |\n| 예시 2 | 내용 |\n'),
+    clear: () => { if (confirm('내용을 모두 지울까요?')) { source.value = ''; dirty = true; update(); } },
+    toggleSource: () => {
+      if (mobileQuery.matches) return setMode('edit');
+      $('#sourcePane').classList.toggle('hidden-el');
+    },
+    togglePreview: () => {
+      if (mobileQuery.matches) return setMode(document.body.classList.contains('mode-preview') ? 'edit' : 'preview');
+      $('#previewPane').classList.toggle('hidden-el');
+    },
+    toggleSync: () => { syncScroll = !syncScroll; toast('스크롤 동기화 ' + (syncScroll ? '켜짐' : '꺼짐')); },
+    new: () => {
+      if (dirty && !confirm('저장하지 않은 변경 사항이 있습니다. 새 문서를 만들까요?')) return;
+      source.value = ''; fileName = 'untitled.md'; dirty = false; update();
+    },
+    open: () => $('#fileInput').click(),
+    save: () => saveMd(),
+    share: () => shareMd(),
+    exportHtml: () => exportHtml(),
+    exportPdf: () => exportPdf(),
+    install: () => installApp(),
+    help: () => openHelp('help'),
+    shortcuts: () => openHelp('shortcuts'),
+    about: () => openHelp('about'),
+  };
+
+  // ---------- 파일 입출력 ----------
+  function download(name, content, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  function saveMd() {
+    download(fileName, source.value, 'text/markdown;charset=utf-8');
+    dirty = false; update();
+    toast('저장했습니다: ' + fileName);
+  }
+  async function shareMd() {
+    const file = new File([source.value], fileName, { type: 'text/markdown' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: fileName }); }
+      catch (e) { if (e.name !== 'AbortError') toast('공유에 실패했습니다.'); }
+    } else {
+      saveMd();
+      toast('이 기기에서는 공유를 지원하지 않아 파일로 저장했습니다.');
+    }
+  }
+  function loadFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      source.value = reader.result; fileName = file.name; dirty = false; update();
+      localStorage.setItem(STORAGE_KEY, source.value);
+      toast('열었습니다: ' + file.name);
+    };
+    reader.readAsText(file, 'utf-8');
+  }
+  $('#fileInput').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+
+  // 드래그앤드롭 (데스크톱/태블릿)
+  source.addEventListener('dragover', e => e.preventDefault());
+  source.addEventListener('drop', e => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  // ---------- 내보내기 ----------
+  const baseName = () => fileName.replace(/\.(md|markdown|txt)$/i, '') || 'document';
+  const EXPORT_CSS = `
+    body{font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif;color:#1f2937;max-width:860px;margin:40px auto;padding:0 24px;line-height:1.75}
+    h1,h2{border-bottom:1px solid #e5e7eb;padding-bottom:.3em}
+    code{background:#f3f4f6;padding:2px 5px;border-radius:3px;font-family:Consolas,monospace;font-size:90%}
+    pre{background:#111827;color:#e5e7eb;padding:14px;border-radius:6px;overflow:auto}
+    pre code{background:none;padding:0;color:inherit}
+    blockquote{border-left:4px solid #d1d5db;margin:0;padding:0 14px;color:#4b5563}
+    table{border-collapse:collapse}th,td{border:1px solid #d1d5db;padding:6px 10px}th{background:#f9fafb}
+    img{max-width:100%}
+    @media print{body{margin:0;max-width:none}@page{margin:18mm}}
+  `;
+  function buildHtmlDoc(title) {
+    return `<!DOCTYPE html>\n<html lang="ko">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${title}</title>\n<style>${EXPORT_CSS}</style>\n</head>\n<body>\n${render(source.value)}\n</body>\n</html>`;
+  }
+  function exportHtml() {
+    download(baseName() + '.html', buildHtmlDoc(baseName()), 'text/html;charset=utf-8');
+    toast('HTML 파일을 저장했습니다.');
+  }
+  // PDF: 숨김 iframe에 문서를 넣고 인쇄 대화상자 호출 → 안드로이드 인쇄 메뉴에서 "PDF로 저장" 선택
+  // (새 창 방식은 안드로이드에서 팝업 차단/빈 화면 문제가 잦아 iframe 방식을 사용)
+  function exportPdf() {
+    let frame = document.getElementById('printFrame');
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.id = 'printFrame';
+      frame.setAttribute('aria-hidden', 'true');
+      frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+      document.body.appendChild(frame);
+    }
+    const doc = frame.contentDocument || frame.contentWindow.document;
+    doc.open(); doc.write(buildHtmlDoc(baseName())); doc.close();
+    setTimeout(() => {
+      try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+      catch (e) { toast('인쇄를 시작할 수 없습니다. HTML로 내보낸 뒤 브라우저에서 인쇄하세요.', 3500); }
+    }, 400);
+    toast('인쇄 창에서 "PDF로 저장"을 선택하세요.', 3000);
+  }
+
+  // ---------- 홈 화면 앱 설치 (PWA) ----------
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (isStandalone()) $('#installBtn').classList.add('hidden-el');
+  else $('#installBtn').classList.remove('hidden-el');
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    $('#installBtn').classList.add('hidden-el');
+    toast('홈 화면에 설치되었습니다.');
+  });
+  async function installApp() {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if (choice.outcome === 'accepted') $('#installBtn').classList.add('hidden-el');
+      return;
+    }
+    openHelp('install');
+  }
+
+  // ---------- 서비스 워커 (오프라인 사용) ----------
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => toast('오프라인 캐시를 준비하지 못했습니다.'));
+    });
+  }
+
+  // ---------- 도움말 ----------
+  const HELP = {
+    help: ['사용 방법', `
+      <h3>화면 구성</h3>
+      <ul>
+        <li><b>휴대폰(세로):</b> 하단 상단의 <b>편집 / 미리보기</b> 탭으로 화면을 전환합니다.</li>
+        <li><b>태블릿·가로 모드·PC:</b> 왼쪽 소스, 오른쪽 미리보기가 함께 보입니다. 가운데 구분선을 드래그해 너비를 조절합니다.</li>
+        <li>툴바는 좌우로 밀어서 더 많은 버튼을 볼 수 있습니다.</li>
+      </ul>
+      <h3>파일 작업</h3>
+      <ul>
+        <li><b>파일 → 열기</b>: 기기의 .md / .txt 파일을 불러옵니다.</li>
+        <li><b>파일 → 저장</b>: .md 파일로 다운로드합니다.</li>
+        <li><b>파일 → 공유</b>: 안드로이드 공유 시트로 파일을 보냅니다(지원 기기).</li>
+        <li><b>HTML / PDF 내보내기</b>: PDF는 인쇄 창에서 "PDF로 저장"을 선택합니다.</li>
+      </ul>
+      <h3>앱처럼 쓰기</h3>
+      <ul>
+        <li>메뉴 <b>파일 → 홈 화면에 앱 설치</b>를 누르면 홈 화면 아이콘이 생기고, 전체 화면 앱처럼 실행됩니다.</li>
+        <li>한 번 열어 두면 인터넷이 없어도 편집할 수 있습니다(CDN 라이브러리는 처음 연결 시 캐시됩니다).</li>
+      </ul>
+      <h3>참고</h3>
+      <ul><li>작성 중인 내용은 기기 안에 자동 보관되며, 앱을 닫았다 열어도 유지됩니다.</li></ul>`],
+    install: ['홈 화면에 설치', `
+      <ul>
+        <li><b>Chrome(안드로이드):</b> 주소창 오른쪽 <b>⋮</b> 메뉴 → <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택합니다.</li>
+        <li><b>삼성 인터넷:</b> 메뉴 → <b>페이지 추가</b> → <b>홈 화면</b>을 선택합니다.</li>
+        <li>설치 버튼이 보이지 않으면 HTTPS 주소로 접속했는지 확인하세요. 파일을 직접 연 경우 설치가 되지 않습니다.</li>
+      </ul>`],
+    shortcuts: ['단축키 목록', `
+      <table>
+        <tr><td><kbd>Ctrl+N</kbd></td><td>새로 만들기</td></tr>
+        <tr><td><kbd>Ctrl+O</kbd></td><td>파일 열기</td></tr>
+        <tr><td><kbd>Ctrl+S</kbd></td><td>저장 (.md)</td></tr>
+        <tr><td><kbd>Ctrl+B</kbd></td><td>굵게</td></tr>
+        <tr><td><kbd>Ctrl+I</kbd></td><td>기울임</td></tr>
+        <tr><td><kbd>Ctrl+K</kbd></td><td>링크 삽입</td></tr>
+        <tr><td><kbd>Tab</kbd></td><td>들여쓰기 (4칸)</td></tr>
+        <tr><td><kbd>F1</kbd></td><td>도움말 열기</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>도움말 닫기</td></tr>
+      </table>
+      <p style="color:#6b7280;font-size:13px">터치 기기에서는 툴바 버튼과 메뉴를 사용하세요.</p>`],
+    about: ['MD 에디터 정보', `
+      <ul>
+        <li>마크다운 소스 편집과 실시간 미리보기를 제공하는 단독 실행형 에디터입니다.</li>
+        <li>HTML / PDF 내보내기를 지원하며, 홈 화면 앱으로 설치할 수 있습니다.</li>
+        <li>마크다운 렌더링에 marked, HTML 정화에 DOMPurify를 사용합니다.</li>
+      </ul>`],
+  };
+  const helpModal = $('#helpModal');
+  function openHelp(key) {
+    const [title, body] = HELP[key];
+    $('#helpTitle').textContent = title;
+    $('#helpBody').innerHTML = body;
+    helpModal.classList.add('show');
+  }
+  function closeHelp() { helpModal.classList.remove('show'); }
+  $('#helpClose').addEventListener('click', closeHelp);
+  helpModal.addEventListener('click', e => { if (e.target === helpModal) closeHelp(); });
+
+  // ---------- 메뉴 동작 ----------
+  document.querySelectorAll('[data-menu]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const menu = btn.parentElement;
+      const open = menu.classList.contains('open');
+      document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+      if (!open) menu.classList.add('open');
+    });
+  });
+  document.querySelectorAll('.menu button[data-act]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+      run(btn.dataset.act);
+    });
+  });
+  // 툴바: 누를 때 textarea 포커스가 빠져 키보드가 내려가는 것을 방지
+  $('#toolbar').querySelectorAll('button[data-act]').forEach(btn => {
+    btn.addEventListener('pointerdown', e => e.preventDefault());
+    btn.addEventListener('click', () => run(btn.dataset.act));
+  });
+  document.addEventListener('click', () => document.querySelectorAll('.menu').forEach(m => m.classList.remove('open')));
+  function run(act) { if (actions[act]) actions[act](); }
+
+  // ---------- 단축키 (외장 키보드/데스크톱) ----------
+  source.addEventListener('keydown', e => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      insert('    ');
+    }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && helpModal.classList.contains('show')) { closeHelp(); return; }
+    if (e.key === 'F1') { e.preventDefault(); openHelp('help'); return; }
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const map = { s: 'save', o: 'open', n: 'new', b: 'bold', i: 'italic', k: 'link' };
+    const act = map[e.key.toLowerCase()];
+    if (act) { e.preventDefault(); run(act); }
+  });
+  window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+  // ---------- 패널 크기 조절 (터치/마우스 공용: Pointer Events) ----------
+  const divider = $('#divider'), panes = $('#panes');
+  let dragging = false;
+  divider.addEventListener('pointerdown', e => { dragging = true; divider.setPointerCapture(e.pointerId); });
+  divider.addEventListener('pointerup', () => dragging = false);
+  divider.addEventListener('pointercancel', () => dragging = false);
+  divider.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const rect = panes.getBoundingClientRect();
+    const ratio = Math.min(0.8, Math.max(0.2, (e.clientX - rect.left) / rect.width));
+    $('#sourcePane').style.flex = ratio;
+    $('#previewPane').style.flex = 1 - ratio;
+  });
+
+  // ---------- 초기화 ----------
+  source.value = localStorage.getItem(STORAGE_KEY) || '# 새 문서\n\n마크다운을 입력해 보세요.\n\n- **굵게**, *기울임*\n- [링크](https://example.com)\n\n```js\nconsole.log("Hello MD");\n```\n';
+  update();
+})();
+</script>
+</body>
+</html>
